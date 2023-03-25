@@ -1,4 +1,5 @@
 import scrapy, json, re, requests
+import requests
 from scrapy.utils.response import open_in_browser
 
 from random_user_agent.user_agent import UserAgent
@@ -11,7 +12,6 @@ software_names = [SoftwareName.CHROME.value]
 operating_systems = [OperatingSystem.WINDOWS.value, OperatingSystem.LINUX.value, OperatingSystem.MAC.value]
 
 user_agent_rotator = UserAgent(software_names=software_names, operating_systems=operating_systems, limit=100)
-
 
 
 # Get Random User Agent String.
@@ -89,9 +89,9 @@ class ZumperSpider(scrapy.Spider):
 
     def start_requests(self):
         # proxies setup for requests
-        proxies = {
+        self.proxies = {
             'http': self.settings.get('PROXY'),
-            'https': self.settings.get('PROXY'),
+            'https': self.settings.get('PROXY')
         }
         with open(self.settings.get("INPUT_FILE")) as f:
             urls = f.read().strip().splitlines()
@@ -174,7 +174,6 @@ class ZumperSpider(scrapy.Spider):
             listing_url = listing.xpath(".//@href").get("").strip()
             listing_url = response.urljoin(listing_url)
             if '/address/' in listing_url or '/apartment-buildings/' in listing_url or '/apartments-for-rent/' in listing_url:
-
                 yield scrapy.Request(
                     url=listing_url,
                     callback=self.parse_detail,
@@ -258,19 +257,34 @@ class ZumperSpider(scrapy.Spider):
         if '?page' not in response.url:
             sub_url = response.url.split('?')[0].split('/')[-1]
             try:
-                self.headers3['user-agent'] = user_agent_rotator.get_random_user_agent()
-                self.headers['user-agent'] = user_agent_rotator.get_random_user_agent()
+                # self.headers3['user-agent'] = user_agent_rotator.get_random_user_agent()
+                # get cookies from response
+                cookies = response.headers.getlist('Set-Cookie')
+                # convert cookies to string
+                cookies = [cookie.decode('utf-8') for cookie in cookies]
+
+                cookies = [cookie.split(';')[0] for cookie in cookies]
+                cookies = '; '.join(cookies)
+
+                headers = self.headers.copy()
+                headers[
+                    'user-agent'] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+                headers['referer'] = response.url
+                headers['cookie'] = cookies
                 # get token
-                resp = requests.get('https://www.zumper.com/api/t/1/bundle', headers=self.headers, proxies=self.proxies)
-                xz_token = json.loads(resp.text)['xz_token']
-                csrf_token = json.loads(resp.text)['csrf']
-                self.headers3['x-zumper-xz-token'] = xz_token
-                self.headers3['x-csrftoken'] = csrf_token
+                session = requests.Session()
+
+                resps = session.get('https://www.zumper.com/api/t/1/bundle', headers=self.headers)
+                xz_token = json.loads(resps.text)['xz_token']
+                csrf_token = json.loads(resps.text)['csrf']
+                headers = self.headers3.copy()
+                headers['referer'] = response.url
+                headers['x-zumper-xz-token'] = xz_token
+                headers['x-csrftoken'] = csrf_token
 
                 json_data = self.json_data.copy()
                 json_data['url'] = sub_url
-                resp = requests.post('https://www.zumper.com/api/t/1/pages/listables', headers=self.headers3,
-                                     json=json_data, proxies=self.proxies)
+                resp = session.post('https://www.zumper.com/api/t/1/pages/listables', json=json_data, headers=headers)
                 datas = json.loads(resp.text)
                 datas = datas['listables']
                 for item in datas:
@@ -291,7 +305,6 @@ class ZumperSpider(scrapy.Spider):
 
             except Exception as e:
                 self.logger.info(f"Error: {sub_url} {e}")
-                breakpoint()
 
     def parse_detail(self, response):
 

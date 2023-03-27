@@ -88,7 +88,7 @@ COOKIES_ENABLED = False
 
 RETRY_HTTP_CODES = [429, 433]
 ### Custom Settings
-
+RETRY_TIMES =  10
 INPUT_FILE = "input.txt"
 
 PROXY = 'http://user:pass@ip:port'

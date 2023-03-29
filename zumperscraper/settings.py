@@ -92,4 +92,4 @@ RETRY_TIMES =  10
 INPUT_FILE = "input.txt"
 
 PROXY = 'http://user:pass@ip:port'
-PROXY = 'http://okitzyql-rotate:pxd2futo95rc@p.webshare.io:80'
+PROXY = 'http://amitupretie:aN1iitcxA3OicAPy_country-UnitedStates@proxy.packetstream.io:31112'

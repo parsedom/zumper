@@ -59,7 +59,7 @@ class ZumperSpider(scrapy.Spider):
         'shortTerm': False,
         'transits': {},
         'url': 'ontario-ca',
-        'limit': 10000,
+        'limit': 100,
         'matching': True,
         'excludeGroupIds': [
         ],
@@ -85,6 +85,8 @@ class ZumperSpider(scrapy.Spider):
         'x-zumper-xz-token': 't7k6kznmbx9.7m8uzs63g',
     }
 
+    groupids_2_suburl = {}
+
     handle_httpstatus_list = [451]
 
     def start_requests(self):
@@ -96,6 +98,7 @@ class ZumperSpider(scrapy.Spider):
         with open(self.settings.get("INPUT_FILE")) as f:
             urls = f.read().strip().splitlines()
         for url in urls:
+            
             self.headers['user-agent'] = user_agent_rotator.get_random_user_agent()
             if 'apartments-for-rent' in url:  # this is a direct listing page
 
@@ -174,6 +177,7 @@ class ZumperSpider(scrapy.Spider):
             listing_url = listing.xpath(".//@href").get("").strip()
             listing_url = response.urljoin(listing_url)
             if '/address/' in listing_url or '/apartment-buildings/' in listing_url or '/apartments-for-rent/' in listing_url:
+            
                 yield scrapy.Request(
                     url=listing_url,
                     callback=self.parse_detail,
@@ -198,8 +202,8 @@ class ZumperSpider(scrapy.Spider):
                     "proxy": self.settings.get("PROXY"),
                 },
             )
-
-        next_pages = response.xpath('//div[contains(@class,"Paginator_container")]//a')
+        
+        next_pages = response.xpath('//div[contains(@class,"Paginator_container")]//a') + response.xpath('//a[contains(text(),"Next"))]/@href').getall()
         for next_page in next_pages:
             self.headers['user-agent'] = user_agent_rotator.get_random_user_agent()
             next_page_url = next_page.xpath(".//@href").get("").strip()
@@ -222,11 +226,17 @@ class ZumperSpider(scrapy.Spider):
         detail_urls = response.xpath(
             '//a[contains(@class,"chakra-link")][@target="_blank"][@aria-hidden="false"]/@href').getall()
 
+        # "group_id":2122112,
+        # get all group_id from response.text using regex
+        group_ids = re.findall(r'"group_id":-(\d+),', response.text)
+        group_ids = [-int(x) for x in group_ids]
+
         for detail_url in detail_urls:
             self.headers['user-agent'] = user_agent_rotator.get_random_user_agent()
             detail_url = response.urljoin(detail_url)
             self.logger.info(f"Detail: {detail_url}")
             # self.logger.info(f"Detail: {detail_url}")
+   
             yield scrapy.Request(
                 url=detail_url,
                 callback=self.parse_detail,
@@ -254,8 +264,12 @@ class ZumperSpider(scrapy.Spider):
                     'proxy': self.settings.get('PROXY')
                 },
             )
-        if '?page' not in response.url:
+        if '?page' not in response.url or True: #load extra urls for all pages
             sub_url = response.url.split('?')[0].split('/')[-1]
+            if sub_url not in self.groupids_2_suburl:
+                self.groupids_2_suburl[sub_url] = set(group_ids)
+            else:
+                self.groupids_2_suburl[sub_url].update(group_ids)
             try:
                 # self.headers3['user-agent'] = user_agent_rotator.get_random_user_agent()
                 # get cookies from response
@@ -274,7 +288,7 @@ class ZumperSpider(scrapy.Spider):
                 # get token
                 session = requests.Session()
 
-                resps = session.get('https://www.zumper.com/api/t/1/bundle', headers=self.headers)
+                resps = session.get('https://www.zumper.com/api/t/1/bundle', headers=self.headers, proxies=self.proxies)
                 xz_token = json.loads(resps.text)['xz_token']
                 csrf_token = json.loads(resps.text)['csrf']
                 headers = self.headers3.copy()
@@ -284,11 +298,15 @@ class ZumperSpider(scrapy.Spider):
 
                 json_data = self.json_data.copy()
                 json_data['url'] = sub_url
-                resp = session.post('https://www.zumper.com/api/t/1/pages/listables', json=json_data, headers=headers)
+                json_data['excludeGroupIds'] = list(self.groupids_2_suburl[sub_url])
+                resp = session.post('https://www.zumper.com/api/t/1/pages/listables', json=json_data, headers=headers, proxies=self.proxies)
                 datas = json.loads(resp.text)
                 datas = datas['listables']
                 for item in datas:
                     detail_url = item['url']
+                    # group_id
+                    group_id = item['group_id']
+                    self.groupids_2_suburl[sub_url].add(group_id)
                     detail_url = response.urljoin(detail_url)
                     self.logger.info(f"Detail: {detail_url}")
 
@@ -305,6 +323,7 @@ class ZumperSpider(scrapy.Spider):
 
             except Exception as e:
                 self.logger.info(f"Error: {sub_url} {e}")
+
 
     def parse_detail(self, response):
 

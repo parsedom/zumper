@@ -19,7 +19,7 @@ NEWSPIDER_MODULE = "zumperscraper.spiders"
 ROBOTSTXT_OBEY = False
 
 # Configure maximum concurrent requests performed by Scrapy (default: 16)
-CONCURRENT_REQUESTS = 2
+CONCURRENT_REQUESTS = 1
 
 # Configure a delay for requests for the same website (default: 0)
 # See https://docs.scrapy.org/en/latest/topics/settings.html#download-delay
@@ -88,8 +88,8 @@ COOKIES_ENABLED = False
 
 RETRY_HTTP_CODES = [429, 433]
 ### Custom Settings
-RETRY_TIMES =  10
+RETRY_TIMES = 10
 INPUT_FILE = "input.txt"
 
-PROXY = 'http://user:pass@ip:port'
-PROXY = 'http://amitupretie:aN1iitcxA3OicAPy_country-UnitedStates@proxy.packetstream.io:31112'
+PROXY = "http://user:pass@ip:port"
+PROXY = "http://amitupretie:aN1iitcxA3OicAPy_country-UnitedStates@proxy.packetstream.io:31112"

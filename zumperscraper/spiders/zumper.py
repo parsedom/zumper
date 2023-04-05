@@ -1,4 +1,7 @@
-import scrapy, json, re, requests
+import scrapy
+import json
+import re
+import requests
 import requests
 from scrapy.utils.response import open_in_browser
 
@@ -125,7 +128,8 @@ class ZumperSpider(scrapy.Spider):
             )
 
     def parse_province(self, response):
-        province = response.xpath("//h1/text()").get("").split("Sitemap")[0].strip()
+        province = response.xpath(
+            "//h1/text()").get("").split("Sitemap")[0].strip()
 
         # Get the list of cities
         cities = response.xpath('//div[contains(@class,"Section_linksContainer")]')[
@@ -134,7 +138,8 @@ class ZumperSpider(scrapy.Spider):
         for city in cities:
             self.headers["user-agent"] = user_agent_rotator.get_random_user_agent()
             city_name = (
-                city.xpath(".//text()").get("").strip().split("Sitemap")[0].strip()
+                city.xpath(
+                    ".//text()").get("").strip().split("Sitemap")[0].strip()
             )
             city_url = city.xpath(".//@href").get("").strip()
             city_url = response.urljoin(city_url)
@@ -150,7 +155,8 @@ class ZumperSpider(scrapy.Spider):
                 },
             )
 
-        next_pages = response.xpath('//div[contains(@class,"Paginator_container")]//a')
+        next_pages = response.xpath(
+            '//div[contains(@class,"Paginator_container")]//a')
         for next_page in next_pages:
             self.headers["user-agent"] = user_agent_rotator.get_random_user_agent()
             next_page_url = next_page.xpath(".//@href").get("").strip()
@@ -169,7 +175,8 @@ class ZumperSpider(scrapy.Spider):
             )
 
     def parse_city(self, response):
-        listings = response.xpath('//div[contains(@class,"Section_linksContainer")]')
+        listings = response.xpath(
+            '//div[contains(@class,"Section_linksContainer")]')
         if listings:
             listings = listings[0].xpath(".//a")
 
@@ -242,7 +249,6 @@ class ZumperSpider(scrapy.Spider):
         for detail_url in detail_urls:
             self.headers["user-agent"] = user_agent_rotator.get_random_user_agent()
             detail_url = response.urljoin(detail_url)
-            self.logger.info(f"Detail: {detail_url}")
             # self.logger.info(f"Detail: {detail_url}")
 
             yield scrapy.Request(
@@ -261,6 +267,7 @@ class ZumperSpider(scrapy.Spider):
         for next_page in next_pages:
             self.headers["user-agent"] = user_agent_rotator.get_random_user_agent()
             next_page_url = response.urljoin(next_page)
+
             # self.logger.info(f"Next Page: {next_page_url}")
             yield scrapy.Request(
                 url=next_page_url,
@@ -311,7 +318,8 @@ class ZumperSpider(scrapy.Spider):
 
                 json_data = self.json_data.copy()
                 json_data["url"] = sub_url
-                json_data["excludeGroupIds"] = list(self.groupids_2_suburl[sub_url])
+                json_data["excludeGroupIds"] = list(
+                    self.groupids_2_suburl[sub_url])
                 resp = session.post(
                     "https://www.zumper.com/api/t/1/pages/listables",
                     json=json_data,
@@ -326,7 +334,7 @@ class ZumperSpider(scrapy.Spider):
                     group_id = item["group_id"]
                     self.groupids_2_suburl[sub_url].add(group_id)
                     detail_url = response.urljoin(detail_url)
-                    self.logger.info(f"Detail: {detail_url}")
+                    # self.logger.info(f"Detail: {detail_url}")
 
                     yield scrapy.Request(
                         url=detail_url,
@@ -343,19 +351,8 @@ class ZumperSpider(scrapy.Spider):
                 self.logger.info(f"Error: {sub_url} {e}")
 
     def parse_detail(self, response):
-        building_name = response.xpath("//h1/text()").get("").strip()
-        address_unformat = (
-            response.xpath('//span[contains(@class,"Header_headerAddress")]/text()')
-            .get("")
-            .strip()
-        )
-        if not address_unformat:
-            # '750 Bridge Lake Dr, Winnipeg, MB R3Y 0Y8'
-            address_unformat = (
-                response.xpath('//*[@data-testid="address"]/h1/text()').get("").strip()
-            )
 
-        # get the json data
+        # get the json data from the script tag
         # window.__PRELOADED_STATE__
         json_data = json.loads(
             response.xpath(
@@ -367,6 +364,70 @@ class ZumperSpider(scrapy.Spider):
             .split("=")[1]
             .split(";")[0]
         )
+
+        building_name = response.xpath("//h1/text()").get("").strip()
+        try:
+            address_json = json.loads(response.xpath(
+                '//script[@id="schema-json"][contains(.,"address")]/text()').get("").strip())
+            stree = address_json["address"]["streetAddress"]
+            city = address_json["address"]["addressLocality"]
+            state = address_json["address"]["addressRegion"]
+            zip_code = address_json["address"]["postalCode"]
+            address_unformat = f"{stree}, {city}, {state} {zip_code}"
+        except:
+            address_unformat = ""
+        if not address_unformat:
+            # try the property="og:title"
+            try:
+                og_title = (
+                    response.xpath(
+                        '//meta[@property="og:title"]/@content').get("").strip()
+                )
+                for temp in og_title.split('-'):
+                    if temp.strip().count(',') >= 2:
+                        # also check if the last two words are postal code(canadian postal code which needs to be 3 digits)
+                        temp = temp.strip()
+                        if len(temp.split()[-1].strip()) == 3 and len(temp.split()[-2].strip()) == 3:
+                            address_unformat = temp
+                            break
+            except:
+                pass
+        if not address_unformat:
+            address_unformat = (
+                response.xpath(
+                    '//span[contains(@class,"Header_headerAddress")]/text()')
+                .get("")
+                .strip()
+            )
+        if not address_unformat:
+            # '750 Bridge Lake Dr, Winnipeg, MB R3Y 0Y8'
+            address_unformat = (
+                response.xpath(
+                    '//*[@data-testid="address"]/h1/text()').get("").strip()
+            )
+        if not address_unformat:
+            try:
+                address_unformat = json_data["detail"]["entity"]["data"]["formatted_address"]
+            except:
+                pass
+
+        if not address_unformat:
+            ###### UPDATE THE LIST OF ADDRESS SELECTORS HERE ######
+            address_selectors = [
+                '//div[@data-testid="address"]/h1/text()',
+            ]
+            for address_selector in address_selectors:
+                address_unformat = (
+                    response.xpath(address_selector).get("").strip()
+                )
+                if address_unformat:
+                    break
+
+        yield {
+            'url': response.url,
+            'address': address_unformat,
+        }
+        return
 
         # try to get the neighbourhood
         try:
@@ -442,10 +503,12 @@ class ZumperSpider(scrapy.Spider):
                     unit_ameneties.append(amenety)
 
         try:
-            building_id = int(json_data["detail"]["entity"]["data"]["building_id"])
+            building_id = int(json_data["detail"]
+                              ["entity"]["data"]["building_id"])
         except:
             try:
-                building_id = int(response.text.split('"listing_id":')[1].split(",")[0])
+                building_id = int(response.text.split(
+                    '"listing_id":')[1].split(",")[0])
             except:
                 building_id = ""
                 return  # if no building id, then return because this is a hidden listing
@@ -480,7 +543,8 @@ class ZumperSpider(scrapy.Spider):
             promotion_type = ""
 
         floor_data = []
-        floor_plans = response.xpath('//*[@id="floorplans"]/div[@class="css-0"]')
+        floor_plans = response.xpath(
+            '//*[@id="floorplans"]/div[@class="css-0"]')
         try:
             floor_plans_json = json_data["detail"]["entity"]["data"][
                 "floorplan_listings"
@@ -545,7 +609,7 @@ class ZumperSpider(scrapy.Spider):
             for floor_plan in floor_plans:
                 if (
                     "Occupied" in floor_plan.get()
-                ):  ##### COMMENT THESE LINES OUT IF YOU WANT TO SCRAPE OCCUPIED UNITS
+                ):  # COMMENT THESE LINES OUT IF YOU WANT TO SCRAPE OCCUPIED UNITS
                     continue
                 try:
                     price1 = (
@@ -595,7 +659,8 @@ class ZumperSpider(scrapy.Spider):
                     continue
                 try:
                     bathrooms = (
-                        floor_plan.xpath('.//p[contains(text(),"Bath")]/text()')
+                        floor_plan.xpath(
+                            './/p[contains(text(),"Bath")]/text()')
                         .getall()[-1]
                         .replace("Bath", "")
                         .strip()
@@ -615,7 +680,8 @@ class ZumperSpider(scrapy.Spider):
                             half_bathrooms = float(
                                 re.search(r"(\d+) Half", bathrooms).group(1)
                             )
-                        bathrooms = str(full_bathrooms + (half_bathrooms * 0.5))
+                        bathrooms = str(full_bathrooms +
+                                        (half_bathrooms * 0.5))
                     if bathrooms.isdigit():
                         bathrooms = float(bathrooms)
 
@@ -626,7 +692,8 @@ class ZumperSpider(scrapy.Spider):
 
                 try:
                     sqft = (
-                        floor_plan.xpath('.//p[contains(text(),"sqft")]/text()')
+                        floor_plan.xpath(
+                            './/p[contains(text(),"sqft")]/text()')
                         .getall()[-1]
                         .replace("sqft", "")
                         .strip()
@@ -785,7 +852,8 @@ class ZumperSpider(scrapy.Spider):
                 )
             except:
                 price = (
-                    response.xpath('//div[contains(@class,"Header_price__")]/text()')
+                    response.xpath(
+                        '//div[contains(@class,"Header_price__")]/text()')
                     .get("")
                     .replace("$", "")
                     .replace(",", "")
@@ -872,12 +940,14 @@ class ZumperSpider(scrapy.Spider):
             car_friendly = ""
 
         try:
-            cycling_friendly = round(float(json_data["cycling_friendly"]["value"]) * 2)
+            cycling_friendly = round(
+                float(json_data["cycling_friendly"]["value"]) * 2)
         except:
             cycling_friendly = ""
 
         try:
-            transit_friendly = round(float(json_data["transit_friendly"]["value"]) * 2)
+            transit_friendly = round(
+                float(json_data["transit_friendly"]["value"]) * 2)
         except:
             transit_friendly = ""
 

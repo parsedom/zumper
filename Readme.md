@@ -48,3 +48,16 @@ Finally, uncomment the following lines in the zumper.py file:
 ```python
 # 'proxy': self.settings.get('PROXY')
 ```
+
+4. To update selectors for address(in case you encounter new formats for addresses), update the following lines in the zumper.py file:
+
+```python
+ ###### UPDATE THE LIST OF ADDRESS SELECTORS HERE ######
+address_selectors = [
+   'selector1',
+   'selector2',
+]
+
+```
+
+These are supposed to be xpath selectors.
